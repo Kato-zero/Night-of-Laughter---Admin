@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Night of Laughter - Admin</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4">
+        <h1 class="text-3xl font-bold mb-6">🎭 Night of Laughter Admin</h1>
+        
+        <!-- Login Section -->
+        <div id="login-section" class="bg-white p-6 rounded-lg shadow mb-6">
+            <h2 class="text-xl font-semibold mb-4">Login</h2>
+            <input type="email" id="email" placeholder="Email" class="border p-2 mr-2">
+            <input type="password" id="password" placeholder="Password" class="border p-2 mr-2">
+            <button onclick="login()" class="bg-blue-500 text-white px-4 py-2 rounded">Login</button>
+        </div>
+
+        <!-- Admin Panel (hidden until login) -->
+        <div id="admin-panel" class="hidden">
+            <!-- Tabs -->
+            <div class="bg-white p-4 rounded-lg shadow mb-6">
+                <button onclick="showTab('events')" class="px-4 py-2 bg-blue-500 text-white rounded mr-2">Events</button>
+                <button onclick="showTab('attendees')" class="px-4 py-2 bg-gray-500 text-white rounded mr-2">Attendees</button>
+                <button onclick="showTab('add-event')" class="px-4 py-2 bg-green-500 text-white rounded">+ Add Event</button>
+                <button onclick="logout()" class="px-4 py-2 bg-red-500 text-white rounded float-right">Logout</button>
+            </div>
+
+            <!-- Events Tab -->
+            <div id="events-tab" class="tab-content bg-white p-6 rounded-lg shadow">
+                <h2 class="text-2xl font-bold mb-4">Events</h2>
+                <div id="events-list" class="grid gap-4"></div>
+            </div>
+
+            <!-- Attendees Tab -->
+            <div id="attendees-tab" class="tab-content hidden bg-white p-6 rounded-lg shadow">
+                <h2 class="text-2xl font-bold mb-4">Attendees</h2>
+                <select id="event-select" class="border p-2 mb-4" onchange="loadAttendees()">
+                    <option value="">Select Event</option>
+                </select>
+                <div id="attendees-list"></div>
+            </div>
+
+            <!-- Add Event Tab -->
+            <div id="add-event-tab" class="tab-content hidden bg-white p-6 rounded-lg shadow">
+                <h2 class="text-2xl font-bold mb-4">Add New Event</h2>
+                <form id="event-form" class="grid gap-4">
+                    <input type="text" id="name" placeholder="Event Name" class="border p-2" required>
+                    <select id="type" class="border p-2" required>
+                        <option value="featured">Featured</option>
+                        <option value="upcoming">Upcoming</option>
+                        <option value="past">Past</option>
+                    </select>
+                    <input type="date" id="date" class="border p-2" required>
+                    <input type="time" id="time" class="border p-2" required>
+                    <input type="text" id="venue" placeholder="Venue" class="border p-2" required>
+                    <input type="url" id="image_url" placeholder="Image URL" class="border p-2">
+                    <textarea id="description" placeholder="Description" class="border p-2"></textarea>
+                    <div class="grid grid-cols-2 gap-4">
+                        <input type="number" id="vip_single" placeholder="VIP Single Price" class="border p-2">
+                        <input type="number" id="vip_double" placeholder="VIP Double Price" class="border p-2">
+                        <input type="number" id="ordinary_single" placeholder="Ordinary Single Price" class="border p-2">
+                        <input type="number" id="ordinary_double" placeholder="Ordinary Double Price" class="border p-2">
+                    </div>
+                    <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded">Save Event</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const supabaseUrl = 'zmplzjbbsbkbwkvhpfth';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InptcGx6amJic2JrYndrdmhwZnRoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkzNjIyODgsImV4cCI6MjA4NDkzODI4OH0.E4DW4ApG5Okc09WMKA3QzsOTjurzc_QK_9MR2emaDqc';
+        const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+
+        // Check session on load
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session) {
+                document.getElementById('login-section').classList.add('hidden');
+                document.getElementById('admin-panel').classList.remove('hidden');
+                loadEvents();
+                loadEventSelect();
+            }
+        });
+
+        async function login() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email: email,
+                password: password
+            });
+
+            if (error) {
+                alert('Login failed: ' + error.message);
+            } else {
+                document.getElementById('login-section').classList.add('hidden');
+                document.getElementById('admin-panel').classList.remove('hidden');
+                loadEvents();
+                loadEventSelect();
+            }
+        }
+
+        function logout() {
+            supabase.auth.signOut();
+            document.getElementById('login-section').classList.remove('hidden');
+            document.getElementById('admin-panel').classList.add('hidden');
+        }
+
+        function showTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById(tab + '-tab').classList.remove('hidden');
+            if (tab === 'events') loadEvents();
+            if (tab === 'attendees') loadAttendees();
+        }
+
+        async function loadEvents() {
+            const { data: events, error } = await supabase
+                .from('events')
+                .select('*')
+                .order('date', { ascending: true });
+
+            if (error) {
+                console.error('Error loading events:', error);
+                return;
+            }
+
+            const eventsList = document.getElementById('events-list');
+            eventsList.innerHTML = events.map(event => `
+                <div class="border p-4 rounded-lg">
+                    <h3 class="font-bold text-xl">${event.name}</h3>
+                    <p>${event.date} at ${event.time} - ${event.venue}</p>
+                    <p>Type: ${event.type}</p>
+                    <p>VIP Double: K${event.vip_double} | Ordinary Double: K${event.ordinary_double}</p>
+                    <div class="mt-2">
+                        <button onclick="editEvent(${event.id})" class="bg-yellow-500 text-white px-3 py-1 rounded mr-2">Edit</button>
+                        <button onclick="deleteEvent(${event.id})" class="bg-red-500 text-white px-3 py-1 rounded">Delete</button>
+                        <button onclick="viewAttendees(${event.id})" class="bg-blue-500 text-white px-3 py-1 rounded">View Attendees</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function loadEventSelect() {
+            const { data: events } = await supabase.from('events').select('id, name');
+            const select = document.getElementById('event-select');
+            select.innerHTML = '<option value="">Select Event</option>' + 
+                events.map(e => `<option value="${e.id}">${e.name}</option>`).join('');
+        }
+
+        async function loadAttendees() {
+            const eventId = document.getElementById('event-select').value;
+            if (!eventId) return;
+
+            const { data: attendees } = await supabase
+                .from('attendees')
+                .select('*')
+                .eq('event_id', eventId);
+
+            document.getElementById('attendees-list').innerHTML = `
+                <table class="w-full">
+                    <thead>
+                        <tr class="bg-gray-200">
+                            <th class="p-2">Name</th>
+                            <th class="p-2">Email</th>
+                            <th class="p-2">Ticket Type</th>
+                            <th class="p-2">Quantity</th>
+                            <th class="p-2">Status</th>
+                            <th class="p-2">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${attendees.map(a => `
+                            <tr class="border-b">
+                                <td class="p-2">${a.name}</td>
+                                <td class="p-2">${a.email || '-'}</td>
+                                <td class="p-2">${a.ticket_type}</td>
+                                <td class="p-2">${a.quantity}</td>
+                                <td class="p-2">
+                                    <span class="px-2 py-1 ${a.checked_in ? 'bg-green-200' : 'bg-yellow-200'} rounded">
+                                        ${a.checked_in ? 'Checked In' : 'Pending'}
+                                    </span>
+                                </td>
+                                <td class="p-2">
+                                    <button onclick="toggleCheckIn(${a.id}, ${!a.checked_in})" class="bg-blue-500 text-white px-2 py-1 rounded text-sm">
+                                        Toggle Check-in
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        document.getElementById('event-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const eventData = {
+                name: document.getElementById('name').value,
+                type: document.getElementById('type').value,
+                date: document.getElementById('date').value,
+                time: document.getElementById('time').value,
+                venue: document.getElementById('venue').value,
+                image_url: document.getElementById('image_url').value,
+                description: document.getElementById('description').value,
+                vip_single: parseInt(document.getElementById('vip_single').value) || 0,
+                vip_double: parseInt(document.getElementById('vip_double').value) || 0,
+                ordinary_single: parseInt(document.getElementById('ordinary_single').value) || 0,
+                ordinary_double: parseInt(document.getElementById('ordinary_double').value) || 0
+            };
+
+            const { error } = await supabase.from('events').insert([eventData]);
+            
+            if (error) {
+                alert('Error saving event: ' + error.message);
+            } else {
+                alert('Event saved successfully!');
+                e.target.reset();
+                loadEvents();
+                showTab('events');
+            }
+        });
+
+        async function deleteEvent(id) {
+            if (confirm('Are you sure?')) {
+                const { error } = await supabase.from('events').delete().eq('id', id);
+                if (!error) loadEvents();
+            }
+        }
+
+        async function toggleCheckIn(id, status) {
+            const { error } = await supabase
+                .from('attendees')
+                .update({ checked_in: status })
+                .eq('id', id);
+            if (!error) loadAttendees();
+        }
+
+        function viewAttendees(eventId) {
+            document.getElementById('event-select').value = eventId;
+            showTab('attendees');
+            loadAttendees();
+        }
+    </script>
+</body>
+</html>
